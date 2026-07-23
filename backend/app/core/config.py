@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_format: Literal["json", "console"] = "json"
 
+    # Scan execution (BackgroundTasks). Set false in tests to assert queued/cancel.
+    scan_auto_execute: bool = True
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, value: object) -> object:

@@ -106,6 +106,7 @@ class AuditAction(StrEnum):
     SCAN_STARTED = "scan_started"
     SCAN_COMPLETED = "scan_completed"
     SCAN_FAILED = "scan_failed"
+    SCAN_CANCELLED = "scan_cancelled"
     REPORT_GENERATED = "report_generated"
     REPORT_DOWNLOADED = "report_downloaded"
     SETTINGS_UPDATED = "settings_updated"

@@ -1,5 +1,5 @@
 """Services package."""
 
-from app.services import audit, connections, projects
+from app.services import audit, connections, projects, scans
 
-__all__ = ["audit", "connections", "projects"]
+__all__ = ["audit", "connections", "projects", "scans"]

@@ -11,6 +11,7 @@ from app.models.notification import Notification
 from app.models.project import Project
 from app.models.report import Report
 from app.models.scan import Scan
+from app.models.scan_summary import ScanSummary
 from app.models.user import User
 
 __all__ = [
@@ -22,5 +23,6 @@ __all__ = [
     "Project",
     "Report",
     "Scan",
+    "ScanSummary",
     "User",
 ]

@@ -1,12 +1,25 @@
-"""Assessment ORM model — runtime result of one catalog test in a scan."""
+"""Assessment ORM model — runtime result of one catalog test in a scan.
+
+API layer refers to these rows as AssessmentExecution records.
+"""
 
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Text, UniqueConstraint, Uuid, text
+from sqlalchemy import (
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -71,6 +84,17 @@ class Assessment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         JSONB,
         nullable=False,
         server_default=text("'{}'::jsonb"),
+    )
+    execution_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    raw_result: Mapped[JSONDict] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    logs: Mapped[list[Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'[]'::jsonb"),
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
