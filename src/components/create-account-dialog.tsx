@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { messageForApiError } from "@/lib/api/errors";
 
 const fieldClass =
   "h-auto w-full rounded-xl border-border bg-surface/60 px-3 py-2.5 text-sm shadow-none focus-visible:border-foreground/40 focus-visible:bg-surface focus-visible:ring-4 focus-visible:ring-foreground/5";
@@ -21,7 +22,7 @@ export type CreateAccountPayload = {
 type CreateAccountDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreate: (payload: CreateAccountPayload) => void;
+  onCreate: (payload: CreateAccountPayload) => void | Promise<void>;
 };
 
 function isValidEmail(email: string) {
@@ -59,8 +60,8 @@ export function CreateAccountDialog({ open, onOpenChange, onCreate }: CreateAcco
       setError("Enter a valid email address.");
       return;
     }
-    if (password.length < 4) {
-      setError("Password must be at least 4 characters.");
+    if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+      setError("Password must be 8+ characters with at least one letter and one number.");
       return;
     }
     if (password !== confirm) {
@@ -70,10 +71,14 @@ export function CreateAccountDialog({ open, onOpenChange, onCreate }: CreateAcco
 
     setError(null);
     setSubmitting(true);
-    await new Promise((r) => setTimeout(r, 450));
-    onCreate({ name: fullName, email: mail, password });
-    setSubmitting(false);
-    onOpenChange(false);
+    try {
+      await onCreate({ name: fullName, email: mail, password });
+      onOpenChange(false);
+    } catch (err) {
+      setError(messageForApiError(err));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -86,7 +91,7 @@ export function CreateAccountDialog({ open, onOpenChange, onCreate }: CreateAcco
             </div>
             <DialogTitle className="text-lg font-semibold tracking-tight">Create Account</DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground">
-              Mock registration — your account is stored in local session only.
+              Create your AI Shield account to manage projects and connections.
             </DialogDescription>
           </DialogHeader>
 

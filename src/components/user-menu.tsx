@@ -109,8 +109,9 @@ export function UserMenu({ variant = "navbar" }: UserMenuProps) {
 
   function confirmLogout() {
     setLogoutOpen(false);
-    logout();
-    void navigate({ to: "/login", replace: true });
+    void logout().then(() => {
+      void navigate({ to: "/login", replace: true });
+    });
   }
 
   return (

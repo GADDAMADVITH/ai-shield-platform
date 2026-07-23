@@ -1,15 +1,42 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import type { LucideIcon } from "lucide-react";
-import { Bot, Braces, MessageSquare, Workflow } from "lucide-react";
 import {
-  APPLICATION_TYPES,
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  type ReactNode,
+} from "react";
+import type { LucideIcon } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
   type ApplicationType,
   type ConnectionMethod,
   type CreateProjectPayload,
   type EnvironmentOption,
 } from "@/components/create-project-dialog";
+import { createConnection } from "@/lib/api/connections";
+import {
+  mapConnectionMethodToApi,
+  mapBackendProject,
+  mapEnvironmentToApi,
+} from "@/lib/api/mappers";
+import {
+  archiveProject as archiveProjectApi,
+  createProject as createProjectApi,
+  deleteProject as deleteProjectApi,
+  listProjects,
+  updateProject as updateProjectApi,
+} from "@/lib/api/projects";
+import type { ProjectStatus } from "@/lib/api/types";
+import { useAuth } from "@/lib/auth-context";
+import {
+  iconForType,
+  inferApplicationType,
+  scoreTone,
+  type ProjectTone,
+} from "@/lib/project-display";
 
-export type ProjectTone = "success" | "warning" | "danger" | "info" | "muted";
+export type { ProjectTone };
+export { iconForType, inferApplicationType, scoreTone };
 
 export type Project = {
   id: string;
@@ -25,161 +52,122 @@ export type Project = {
   scans: number;
   last: string;
   runScanDisabled?: boolean;
+  description?: string | null;
+  backendStatus?: ProjectStatus;
 };
 
-export function scoreTone(score: number): ProjectTone {
-  if (score >= 90) return "success";
-  if (score >= 80) return "warning";
-  return "danger";
-}
-
-export function iconForType(type: ApplicationType | string): LucideIcon {
-  if (type.includes("RAG") || type.includes("Document")) return Bot;
-  if (type.includes("Coding") || type.includes("Agent") || type.includes("Autonomous")) return Workflow;
-  if (type.includes("Custom") || type.includes("Analytics") || type.includes("Resume") || type.includes("Embeddings"))
-    return Braces;
-  return MessageSquare;
-}
-
-export function inferApplicationType(type: string): ApplicationType {
-  const normalized = type.toLowerCase();
-  if (normalized.includes("rag") || normalized.includes("document")) return "RAG / Document Q&A";
-  if (normalized.includes("coding") || normalized.includes("copilot") || normalized.includes("agent"))
-    return "AI Coding Assistant";
-  if (normalized.includes("support") || normalized.includes("customer"))
-    return "AI Customer Support Assistant";
-  if (normalized.includes("chat") || normalized.includes("voice")) return "AI Chatbot";
-  if (normalized.includes("embed")) return "Custom AI Application";
-  const match = APPLICATION_TYPES.find((t) => t === type);
-  return match ?? "Custom AI Application";
-}
-
-export function buildProjectFromPayload(payload: CreateProjectPayload): Project {
-  const score = 70 + Math.floor(Math.random() * 31);
-  return {
-    id: `proj_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-    name: payload.name,
-    env: payload.environment.toLowerCase(),
-    type: payload.applicationType,
-    applicationType: payload.applicationType,
-    connectionMethod: payload.connectionMethod,
-    icon: iconForType(payload.applicationType),
-    score,
-    tone: scoreTone(score),
-    status: "Connected",
-    scans: 0,
-    last: "Never",
-    runScanDisabled: true,
-  };
-}
-
-const INITIAL_PROJECTS: Project[] = [
-  {
-    id: "knowledge-rag",
-    name: "knowledge-rag",
-    env: "production",
-    type: "RAG · GPT-4o",
-    applicationType: "RAG / Document Q&A",
-    connectionMethod: "REST API",
-    icon: Bot,
-    score: 96,
-    tone: "success",
-    status: "Connected",
-    scans: 128,
-    last: "12 min ago",
-  },
-  {
-    id: "dev-copilot",
-    name: "dev-copilot",
-    env: "staging",
-    type: "Agent · Claude 3.5",
-    applicationType: "AI Coding Assistant",
-    connectionMethod: "SDK Integration (Node.js)",
-    icon: Workflow,
-    score: 82,
-    tone: "warning",
-    status: "Connected",
-    scans: 74,
-    last: "1h ago",
-  },
-  {
-    id: "support-chat",
-    name: "support-chat",
-    env: "production",
-    type: "Chat · Llama 3",
-    applicationType: "AI Customer Support Assistant",
-    connectionMethod: "REST API",
-    icon: MessageSquare,
-    score: 91,
-    tone: "success",
-    status: "Connected",
-    scans: 212,
-    last: "26 min ago",
-  },
-  {
-    id: "ops-agent",
-    name: "ops-agent",
-    env: "production",
-    type: "Autonomous · Multi-tool",
-    applicationType: "AI Coding Assistant",
-    connectionMethod: "SDK Integration (Python)",
-    icon: Workflow,
-    score: 68,
-    tone: "danger",
-    status: "Attention",
-    scans: 41,
-    last: "3h ago",
-  },
-  {
-    id: "embed-api",
-    name: "embed-api",
-    env: "development",
-    type: "Embeddings API",
-    applicationType: "Custom AI Application",
-    connectionMethod: "REST API",
-    icon: Braces,
-    score: 88,
-    tone: "success",
-    status: "Connected",
-    scans: 55,
-    last: "2h ago",
-  },
-  {
-    id: "voice-realtime",
-    name: "voice-realtime",
-    env: "staging",
-    type: "Realtime · Voice",
-    applicationType: "AI Chatbot",
-    connectionMethod: "Website Testing (Playwright)",
-    icon: MessageSquare,
-    score: 79,
-    tone: "warning",
-    status: "Syncing",
-    scans: 22,
-    last: "8m ago",
-  },
-];
+export const PROJECTS_QUERY_KEY = ["projects"] as const;
 
 type ProjectsContextValue = {
   projects: Project[];
-  addProject: (payload: CreateProjectPayload) => Project;
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
+  refetch: () => void;
+  addProject: (payload: CreateProjectPayload) => Promise<Project>;
+  updateProject: (
+    projectId: string,
+    patch: {
+      name?: string;
+      description?: string | null;
+      status?: ProjectStatus;
+    },
+  ) => Promise<Project>;
+  archiveProject: (projectId: string) => Promise<Project>;
+  deleteProject: (projectId: string) => Promise<void>;
 };
 
 const ProjectsContext = createContext<ProjectsContextValue | null>(null);
 
 export function ProjectsProvider({ children }: { children: ReactNode }) {
-  const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
+  const { isAuthenticated } = useAuth();
+  const queryClient = useQueryClient();
+
+  const projectsQuery = useQuery({
+    queryKey: PROJECTS_QUERY_KEY,
+    queryFn: async () => {
+      const page = await listProjects(1, 100);
+      return page.items.map(mapBackendProject);
+    },
+    enabled: isAuthenticated,
+  });
+
+  const invalidate = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY });
+  }, [queryClient]);
+
+  const createMutation = useMutation({
+    mutationFn: async (payload: CreateProjectPayload) => {
+      const created = await createProjectApi({
+        name: payload.name,
+        environment: mapEnvironmentToApi(payload.environment),
+        application_type: payload.applicationType,
+        connection_method: payload.connectionMethod,
+        description: payload.description || null,
+      });
+
+      const method = mapConnectionMethodToApi(payload.connectionMethod);
+      await createConnection(created.id, {
+        name: "Primary",
+        connection_method: method,
+        base_url: method === "playwright" ? null : payload.targetUrl,
+        health_endpoint: method === "rest_api" ? "/health" : null,
+        playwright_entry_url: method === "playwright" ? payload.targetUrl : null,
+        notes: "Created with project",
+      });
+
+      return mapBackendProject(created);
+    },
+    onSuccess: () => invalidate(),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({
+      projectId,
+      patch,
+    }: {
+      projectId: string;
+      patch: { name?: string; description?: string | null; status?: ProjectStatus };
+    }) => mapBackendProject(await updateProjectApi(projectId, patch)),
+    onSuccess: () => invalidate(),
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: async (projectId: string) => mapBackendProject(await archiveProjectApi(projectId)),
+    onSuccess: () => invalidate(),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (projectId: string) => deleteProjectApi(projectId),
+    onSuccess: () => invalidate(),
+  });
 
   const value = useMemo<ProjectsContextValue>(
     () => ({
-      projects,
-      addProject: (payload) => {
-        const project = buildProjectFromPayload(payload);
-        setProjects((prev) => [project, ...prev]);
-        return project;
+      projects: projectsQuery.data ?? [],
+      isLoading: projectsQuery.isLoading,
+      isError: projectsQuery.isError,
+      error: projectsQuery.error instanceof Error ? projectsQuery.error : null,
+      refetch: () => {
+        void projectsQuery.refetch();
       },
+      addProject: (payload) => createMutation.mutateAsync(payload),
+      updateProject: (projectId, patch) =>
+        updateMutation.mutateAsync({ projectId, patch }),
+      archiveProject: (projectId) => archiveMutation.mutateAsync(projectId),
+      deleteProject: (projectId) => deleteMutation.mutateAsync(projectId),
     }),
-    [projects],
+    [
+      projectsQuery.data,
+      projectsQuery.isLoading,
+      projectsQuery.isError,
+      projectsQuery.error,
+      projectsQuery,
+      createMutation,
+      updateMutation,
+      archiveMutation,
+      deleteMutation,
+    ],
   );
 
   return <ProjectsContext.Provider value={value}>{children}</ProjectsContext.Provider>;

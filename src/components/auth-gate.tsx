@@ -5,22 +5,23 @@ import { useAuth } from "@/lib/auth-context";
 /** Client-side session gate for AppShell pages (covers full-page refresh). */
 export function AuthGate({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
-  const { user, isAuthenticated, refresh } = useAuth();
+  const { user, isAuthenticated, bootstrapping, refresh } = useAuth();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    refresh();
+    void refresh();
   }, [refresh]);
 
   useEffect(() => {
+    if (bootstrapping) return;
     if (!isAuthenticated || !user) {
       void navigate({ to: "/login", replace: true });
       return;
     }
     setReady(true);
-  }, [isAuthenticated, user, navigate]);
+  }, [bootstrapping, isAuthenticated, user, navigate]);
 
-  if (!ready) {
+  if (bootstrapping || !ready) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">

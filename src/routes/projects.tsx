@@ -1,10 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Plus, Filter, MoreHorizontal, ArrowUpRight } from "lucide-react";
+import { useState } from "react";
+import { Plus, Filter, MoreHorizontal, ArrowUpRight, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { Card, Chip, ScoreRing, StatusDot } from "@/components/ui-primitives";
-import { useProjects } from "@/lib/projects";
+import { ProjectConnectionsDialog } from "@/components/project-connections-dialog";
+import { useProjects, type Project } from "@/lib/projects";
 import { useScanWorkflow } from "@/components/scan-workflow-provider";
 import { requireAuth } from "@/lib/auth";
+import { messageForApiError } from "@/lib/api/errors";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/projects")({
   beforeLoad: () => {
@@ -22,8 +33,28 @@ export const Route = createFileRoute("/projects")({
 });
 
 function Projects() {
-  const { projects } = useProjects();
+  const { projects, isLoading, isError, error, refetch, archiveProject, deleteProject } =
+    useProjects();
   const { openCreateProject, openStartScan } = useScanWorkflow();
+  const [connectionsProject, setConnectionsProject] = useState<Project | null>(null);
+
+  async function handleArchive(project: Project) {
+    try {
+      await archiveProject(project.id);
+      toast.success("Project archived", { description: project.name });
+    } catch (err) {
+      toast.error(messageForApiError(err));
+    }
+  }
+
+  async function handleDelete(project: Project) {
+    try {
+      await deleteProject(project.id);
+      toast.success("Project deleted", { description: project.name });
+    } catch (err) {
+      toast.error(messageForApiError(err));
+    }
+  }
 
   return (
     <AppShell>
@@ -50,6 +81,38 @@ function Projects() {
         </div>
       </div>
 
+      {isLoading ? (
+        <div className="flex items-center gap-2 py-16 justify-center text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading projects…
+        </div>
+      ) : null}
+
+      {isError ? (
+        <Card className="!p-5">
+          <p className="text-sm text-destructive">{messageForApiError(error)}</p>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="mt-3 rounded-xl border border-border px-3 py-2 text-sm"
+          >
+            Retry
+          </button>
+        </Card>
+      ) : null}
+
+      {!isLoading && !isError && projects.length === 0 ? (
+        <Card className="!p-8 text-center">
+          <p className="text-sm text-muted-foreground">No projects yet. Create your first AI application.</p>
+          <button
+            type="button"
+            onClick={() => openCreateProject()}
+            className="mt-4 inline-flex items-center gap-2 rounded-xl bg-foreground px-3 py-2 text-sm font-medium text-background"
+          >
+            <Plus className="h-4 w-4" /> New project
+          </button>
+        </Card>
+      ) : null}
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {projects.map((p, i) => {
           const Icon = p.icon;
@@ -65,9 +128,28 @@ function Projects() {
                     <div className="mt-0.5 text-[11px] text-muted-foreground">{p.type}</div>
                   </div>
                 </div>
-                <button type="button" className="text-muted-foreground hover:text-foreground">
-                  <MoreHorizontal className="h-4 w-4" />
-                </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button type="button" className="text-muted-foreground hover:text-foreground">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="rounded-2xl">
+                    <DropdownMenuItem onClick={() => setConnectionsProject(p)}>
+                      Connections
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => void handleArchive(p)}>
+                      Archive
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => void handleDelete(p)}
+                    >
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
 
               <div className="my-5 flex items-center justify-center py-2">
@@ -103,6 +185,7 @@ function Projects() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => setConnectionsProject(p)}
                   className="inline-flex items-center gap-1 rounded-xl border border-border bg-surface/50 px-3 py-2 text-xs text-muted-foreground hover:text-foreground"
                 >
                   Open <ArrowUpRight className="h-3.5 w-3.5" />
@@ -112,6 +195,17 @@ function Projects() {
           );
         })}
       </div>
+
+      {connectionsProject ? (
+        <ProjectConnectionsDialog
+          open={Boolean(connectionsProject)}
+          onOpenChange={(open) => {
+            if (!open) setConnectionsProject(null);
+          }}
+          projectId={connectionsProject.id}
+          projectName={connectionsProject.name}
+        />
+      ) : null}
     </AppShell>
   );
 }

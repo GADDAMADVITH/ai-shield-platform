@@ -1,4 +1,13 @@
 import { redirect } from "@tanstack/react-router";
+import {
+  applyAuthSession,
+  loginRequest,
+  logoutRequest,
+  meRequest,
+  registerRequest,
+} from "@/lib/api/auth";
+import { clearTokens, getAccessToken, getRefreshToken } from "@/lib/api/client";
+import { mapBackendUser } from "@/lib/api/mappers";
 
 export const AUTH_FLAG_KEY = "ais-auth";
 export const AUTH_USER_KEY = "ais-auth-user";
@@ -13,21 +22,6 @@ export type AuthUser = {
   role: string;
 };
 
-export const MOCK_USER: AuthUser = {
-  id: "user_001",
-  name: "Advith",
-  email: "advith@aishield.co",
-  role: "Administrator",
-};
-
-function readFlag(storage: Storage): boolean {
-  try {
-    return storage.getItem(AUTH_FLAG_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
 function readUser(storage: Storage): AuthUser | null {
   try {
     const raw = storage.getItem(AUTH_USER_KEY);
@@ -35,35 +29,11 @@ function readUser(storage: Storage): AuthUser | null {
     const parsed = JSON.parse(raw) as Partial<AuthUser>;
     if (!parsed || typeof parsed.name !== "string" || typeof parsed.email !== "string") return null;
     return {
-      id: typeof parsed.id === "string" ? parsed.id : MOCK_USER.id,
+      id: typeof parsed.id === "string" ? parsed.id : "",
       name: parsed.name,
       email: parsed.email,
-      role: typeof parsed.role === "string" ? parsed.role : MOCK_USER.role,
+      role: typeof parsed.role === "string" ? parsed.role : "Member",
     };
-  } catch {
-    return null;
-  }
-}
-
-export function isAuthenticated(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return readFlag(sessionStorage) || readFlag(localStorage);
-  } catch {
-    return false;
-  }
-}
-
-export function getStoredUser(): AuthUser | null {
-  if (typeof window === "undefined") return null;
-  try {
-    if (readFlag(sessionStorage)) {
-      return readUser(sessionStorage) ?? (readFlag(localStorage) ? readUser(localStorage) : null) ?? MOCK_USER;
-    }
-    if (readFlag(localStorage)) {
-      return readUser(localStorage) ?? MOCK_USER;
-    }
-    return null;
   } catch {
     return null;
   }
@@ -82,26 +52,62 @@ function persistUser(user: AuthUser, remember: boolean) {
   }
 }
 
-/** Persist a mock authenticated user session. */
-export function login(remember = true, overrides: Partial<AuthUser> = {}): AuthUser {
-  const user: AuthUser = {
-    ...MOCK_USER,
-    ...overrides,
-    id: overrides.id ?? MOCK_USER.id,
-    name: overrides.name ?? MOCK_USER.name,
-    email: overrides.email ?? MOCK_USER.email,
-    role: overrides.role ?? MOCK_USER.role,
-  };
-  if (typeof window === "undefined") return user;
+export function isAuthenticated(): boolean {
+  if (typeof window === "undefined") return false;
   try {
-    persistUser(user, remember);
+    return Boolean(getAccessToken());
   } catch {
-    /* ignore */
+    return false;
   }
+}
+
+export function getStoredUser(): AuthUser | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return readUser(sessionStorage) ?? readUser(localStorage);
+  } catch {
+    return null;
+  }
+}
+
+export async function loginWithCredentials(
+  email: string,
+  password: string,
+  remember = true,
+): Promise<AuthUser> {
+  const response = await loginRequest(email, password);
+  applyAuthSession(response, remember);
+  const user = mapBackendUser(response.user);
+  persistUser(user, remember);
   return user;
 }
 
-export function logout() {
+export async function registerAccount(
+  fullName: string,
+  email: string,
+  password: string,
+  remember = true,
+): Promise<AuthUser> {
+  const response = await registerRequest(fullName, email, password);
+  applyAuthSession(response, remember);
+  const user = mapBackendUser(response.user);
+  persistUser(user, remember);
+  return user;
+}
+
+export async function fetchCurrentUser(): Promise<AuthUser | null> {
+  if (!getAccessToken()) return null;
+  const backendUser = await meRequest();
+  const user = mapBackendUser(backendUser);
+  const remember =
+    localStorage.getItem(AUTH_FLAG_KEY) === "1" || localStorage.getItem("ais-remember") === "1";
+  persistUser(user, remember);
+  return user;
+}
+
+export async function logout(): Promise<void> {
+  const refresh = getRefreshToken();
+  await logoutRequest(refresh);
   if (typeof window === "undefined") return;
   try {
     sessionStorage.removeItem(AUTH_FLAG_KEY);
@@ -111,9 +117,9 @@ export function logout() {
   } catch {
     /* ignore */
   }
+  clearTokens();
 }
 
-/** Update the mock authenticated user while keeping the session flag. */
 export function updateStoredUser(partial: Partial<AuthUser>): AuthUser | null {
   if (typeof window === "undefined") return null;
   const current = getStoredUser();
@@ -127,29 +133,21 @@ export function updateStoredUser(partial: Partial<AuthUser>): AuthUser | null {
     role: partial.role ?? current.role,
   };
   try {
-    const payload = JSON.stringify(next);
     const remember = localStorage.getItem(AUTH_FLAG_KEY) === "1";
-    sessionStorage.setItem(AUTH_FLAG_KEY, "1");
-    sessionStorage.setItem(AUTH_USER_KEY, payload);
-    if (remember) {
-      localStorage.setItem(AUTH_FLAG_KEY, "1");
-      localStorage.setItem(AUTH_USER_KEY, payload);
-    }
+    persistUser(next, remember);
   } catch {
     /* ignore */
   }
   return next;
 }
 
-/** Client-side route guard for protected pages. Skips during SSR (no storage). */
 export function requireAuth() {
   if (typeof window === "undefined") return;
-  if (!isAuthenticated() || !getStoredUser()) {
+  if (!isAuthenticated()) {
     throw redirect({ to: "/login" });
   }
 }
 
-/** Send authenticated users away from the login page. */
 export function requireGuest() {
   if (typeof window === "undefined") return;
   if (isAuthenticated()) {

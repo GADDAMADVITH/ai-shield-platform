@@ -8,50 +8,95 @@ import {
   type ReactNode,
 } from "react";
 import {
+  fetchCurrentUser,
   getStoredUser,
   isAuthenticated as readIsAuthenticated,
-  login as persistLogin,
+  loginWithCredentials,
   logout as persistLogout,
+  registerAccount,
   updateStoredUser,
   type AuthUser,
 } from "@/lib/auth";
+import { messageForApiError } from "@/lib/api/errors";
 
 type AuthContextValue = {
   user: AuthUser | null;
   isAuthenticated: boolean;
-  login: (remember?: boolean, overrides?: Partial<AuthUser>) => AuthUser;
-  logout: () => void;
+  bootstrapping: boolean;
+  login: (email: string, password: string, remember?: boolean) => Promise<AuthUser>;
+  register: (fullName: string, email: string, password: string) => Promise<AuthUser>;
+  logout: () => Promise<void>;
   updateUser: (partial: Partial<AuthUser>) => AuthUser | null;
-  refresh: () => void;
+  refresh: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [hydrated, setHydrated] = useState(false);
+  const [bootstrapping, setBootstrapping] = useState(true);
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
     if (!readIsAuthenticated()) {
       setUser(null);
       return;
     }
-    setUser(getStoredUser());
+    try {
+      const me = await fetchCurrentUser();
+      setUser(me);
+    } catch {
+      setUser(getStoredUser());
+    }
   }, []);
 
   useEffect(() => {
-    refresh();
-    setHydrated(true);
-  }, [refresh]);
+    let cancelled = false;
+    (async () => {
+      if (!readIsAuthenticated()) {
+        if (!cancelled) {
+          setUser(null);
+          setBootstrapping(false);
+        }
+        return;
+      }
+      // Show cached user immediately, then confirm with /me
+      if (!cancelled) setUser(getStoredUser());
+      try {
+        const me = await fetchCurrentUser();
+        if (!cancelled) setUser(me);
+      } catch {
+        if (!cancelled) {
+          // Token invalid — clear session
+          await persistLogout();
+          setUser(null);
+        }
+      } finally {
+        if (!cancelled) setBootstrapping(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const login = useCallback((remember = true, overrides: Partial<AuthUser> = {}) => {
-    const next = persistLogin(remember, overrides);
+  const login = useCallback(async (email: string, password: string, remember = true) => {
+    const next = await loginWithCredentials(email, password, remember);
     setUser(next);
     return next;
   }, []);
 
-  const logout = useCallback(() => {
-    persistLogout();
+  const register = useCallback(async (fullName: string, email: string, password: string) => {
+    const next = await registerAccount(fullName, email, password, true);
+    setUser(next);
+    return next;
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      await persistLogout();
+    } catch (error) {
+      console.warn(messageForApiError(error));
+    }
     setUser(null);
   }, []);
 
@@ -63,14 +108,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthContextValue>(
     () => ({
-      user: hydrated ? user : getStoredUser(),
-      isAuthenticated: hydrated ? !!user : readIsAuthenticated(),
+      user,
+      isAuthenticated: !!user && readIsAuthenticated(),
+      bootstrapping,
       login,
+      register,
       logout,
       updateUser,
       refresh,
     }),
-    [hydrated, user, login, logout, updateUser, refresh],
+    [user, bootstrapping, login, register, logout, updateUser, refresh],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -29,7 +29,12 @@ class Settings(BaseSettings):
 
     # CORS — comma-separated string in env (NoDecode avoids JSON-only parsing)
     cors_origins: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: ["http://localhost:3000", "http://localhost:5173"]
+        default_factory=lambda: [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
+        ]
     )
 
     # Database

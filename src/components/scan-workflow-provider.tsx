@@ -39,8 +39,8 @@ function ScanWorkflowInner({ children }: { children: ReactNode }) {
     setCreateOpen(true);
   }, []);
 
-  function handleCreate(payload: CreateProjectPayload) {
-    const project = addProject(payload);
+  async function handleCreate(payload: CreateProjectPayload) {
+    const project = await addProject(payload);
     toast.success("Project created", {
       description: `${project.name} is registered and connected.`,
       icon: <CheckCircle2 className="h-4 w-4 text-success" />,

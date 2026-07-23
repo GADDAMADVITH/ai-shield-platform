@@ -72,8 +72,9 @@ function Settings() {
   }, [search.section]);
 
   function handleLogout() {
-    logout();
-    void navigate({ to: "/login", replace: true });
+    void logout().then(() => {
+      void navigate({ to: "/login", replace: true });
+    });
   }
 
   function selectSection(id: SectionId) {

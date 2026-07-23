@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { messageForApiError } from "@/lib/api/errors";
 
 export const APPLICATION_TYPES = [
   "AI Chatbot",
@@ -71,7 +72,7 @@ const selectContentClass =
 type CreateProjectDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreate: (payload: CreateProjectPayload) => void;
+  onCreate: (payload: CreateProjectPayload) => void | Promise<void>;
 };
 
 export function CreateProjectDialog({ open, onOpenChange, onCreate }: CreateProjectDialogProps) {
@@ -82,6 +83,8 @@ export function CreateProjectDialog({ open, onOpenChange, onCreate }: CreateProj
   const [targetUrl, setTargetUrl] = useState("");
   const [description, setDescription] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   function reset() {
     setName("");
@@ -91,6 +94,8 @@ export function CreateProjectDialog({ open, onOpenChange, onCreate }: CreateProj
     setTargetUrl("");
     setDescription("");
     setErrors({});
+    setFormError(null);
+    setSubmitting(false);
   }
 
   function handleOpenChange(next: boolean) {
@@ -109,18 +114,26 @@ export function CreateProjectDialog({ open, onOpenChange, onCreate }: CreateProj
     return Object.keys(next).length === 0;
   }
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!validate()) return;
-    onCreate({
-      name: name.trim(),
-      applicationType: applicationType as ApplicationType,
-      connectionMethod: connectionMethod as ConnectionMethod,
-      environment: environment as EnvironmentOption,
-      targetUrl: targetUrl.trim(),
-      description: description.trim(),
-    });
-    handleOpenChange(false);
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      await onCreate({
+        name: name.trim(),
+        applicationType: applicationType as ApplicationType,
+        connectionMethod: connectionMethod as ConnectionMethod,
+        environment: environment as EnvironmentOption,
+        targetUrl: targetUrl.trim(),
+        description: description.trim(),
+      });
+      handleOpenChange(false);
+    } catch (err) {
+      setFormError(messageForApiError(err));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -221,6 +234,12 @@ export function CreateProjectDialog({ open, onOpenChange, onCreate }: CreateProj
                 className={cn(fieldClass, "min-h-[84px] resize-none")}
               />
             </Field>
+
+            {formError ? (
+              <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12.5px] text-destructive">
+                {formError}
+              </p>
+            ) : null}
           </div>
 
           <DialogFooter className="gap-2 border-t border-border px-6 py-4 sm:space-x-0">
@@ -233,9 +252,10 @@ export function CreateProjectDialog({ open, onOpenChange, onCreate }: CreateProj
             </button>
             <button
               type="submit"
-              className="inline-flex items-center justify-center rounded-xl bg-foreground px-3 py-2 text-sm font-medium text-background transition-transform hover:scale-[1.02]"
+              disabled={submitting}
+              className="inline-flex items-center justify-center rounded-xl bg-foreground px-3 py-2 text-sm font-medium text-background transition-transform hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
             >
-              Create Project
+              {submitting ? "Creating…" : "Create Project"}
             </button>
           </DialogFooter>
         </form>

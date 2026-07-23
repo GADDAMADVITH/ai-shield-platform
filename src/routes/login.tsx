@@ -21,6 +21,7 @@ import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { requireGuest, isAuthenticated } from "@/lib/auth";
 import { useAuth } from "@/lib/auth-context";
+import { messageForApiError } from "@/lib/api/errors";
 import { loadAppearance } from "@/lib/settings-store";
 
 export const Route = createFileRoute("/login")({
@@ -47,12 +48,12 @@ export const Route = createFileRoute("/login")({
 function LoginPage() {
   const navigate = useNavigate();
   const { theme, toggle } = useTheme();
-  const { login } = useAuth();
-  const [email, setEmail] = useState("advith@aishield.co");
-  const [password, setPassword] = useState("demo");
+  const { login, register } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
   const [registerOpen, setRegisterOpen] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated()) {
@@ -64,39 +65,34 @@ function LoginPage() {
     void navigate({ to });
   }
 
-  function signIn(e?: FormEvent) {
+  async function signIn(e?: FormEvent) {
     e?.preventDefault();
-    login(remember, {
-      email: email.trim() || "advith@aishield.co",
-      name: "Advith",
-      role: "Administrator",
-      id: "user_001",
-    });
-    goAfterAuth(loadAppearance().defaultLandingPage);
+    const mail = email.trim();
+    if (!mail || !password) {
+      toast.error("Email and password are required");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const user = await login(mail, password, remember);
+      toast.success("Signed in", { description: `Welcome back, ${user.name}.` });
+      goAfterAuth(loadAppearance().defaultLandingPage);
+    } catch (error) {
+      toast.error("Sign in failed", { description: messageForApiError(error) });
+    } finally {
+      setSubmitting(false);
+    }
   }
 
-  async function continueWithGoogle() {
-    setGoogleLoading(true);
-    await new Promise((r) => setTimeout(r, 550));
-    login(remember, {
-      id: "user_google",
-      name: "Google User",
-      email: "google.user@example.com",
-      role: "Administrator",
+  function continueWithGoogle() {
+    toast.message("Google sign-in is not available yet", {
+      description: "Use email and password, or create an account.",
     });
-    toast.success("Signed in with Google", { description: "Mock Google authentication." });
-    setGoogleLoading(false);
-    goAfterAuth("/");
   }
 
-  function handleCreateAccount(payload: CreateAccountPayload) {
-    login(true, {
-      id: `user_${Date.now().toString(36)}`,
-      name: payload.name,
-      email: payload.email,
-      role: "Administrator",
-    });
-    toast.success("Account created", { description: `Welcome, ${payload.name}.` });
+  async function handleCreateAccount(payload: CreateAccountPayload) {
+    const user = await register(payload.name, payload.email, payload.password);
+    toast.success("Account created", { description: `Welcome, ${user.name}.` });
     goAfterAuth("/");
   }
 
@@ -119,7 +115,6 @@ function LoginPage() {
       <div className="relative z-10 w-full max-w-[920px] animate-float-in">
         <Card className="overflow-hidden !p-0">
           <div className="grid md:grid-cols-2">
-            {/* Brand panel */}
             <div className="relative flex flex-col justify-between border-b border-border bg-elevated/30 p-8 md:border-b-0 md:border-r md:p-10">
               <div>
                 <div className="flex items-center gap-2.5">
@@ -147,7 +142,6 @@ function LoginPage() {
               <SecurityGraphic />
             </div>
 
-            {/* Form panel */}
             <div className="flex flex-col justify-center p-8 md:p-10">
               <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                 Authentication
@@ -157,7 +151,7 @@ function LoginPage() {
                 Continue to the AI Shield security console.
               </p>
 
-              <form className="mt-7 space-y-4" onSubmit={signIn}>
+              <form className="mt-7 space-y-4" onSubmit={(e) => void signIn(e)}>
                 <label className="block">
                   <span className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
                     Email
@@ -167,6 +161,7 @@ function LoginPage() {
                     autoComplete="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@company.com"
                     className="h-auto rounded-xl border-border bg-surface/60 px-3 py-2.5 text-sm shadow-none focus-visible:border-foreground/40 focus-visible:bg-surface focus-visible:ring-4 focus-visible:ring-foreground/5"
                   />
                 </label>
@@ -204,17 +199,19 @@ function LoginPage() {
                 <div className="flex flex-col gap-2 pt-2">
                   <button
                     type="submit"
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-foreground px-4 py-2.5 text-sm font-medium text-background transition-transform hover:scale-[1.02]"
+                    disabled={submitting}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-foreground px-4 py-2.5 text-sm font-medium text-background transition-transform hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
                   >
                     <Lock className="h-4 w-4" strokeWidth={2.25} />
-                    Sign In
+                    {submitting ? "Signing in…" : "Sign In"}
                   </button>
                   <button
                     type="button"
-                    onClick={() => signIn()}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-surface/50 px-4 py-2.5 text-sm text-foreground transition-colors hover:bg-hover"
+                    disabled={submitting}
+                    onClick={() => void signIn()}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-surface/50 px-4 py-2.5 text-sm text-foreground transition-colors hover:bg-hover disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    Continue as Demo
+                    Continue
                   </button>
                 </div>
               </form>
@@ -229,12 +226,11 @@ function LoginPage() {
 
               <button
                 type="button"
-                disabled={googleLoading}
-                onClick={() => void continueWithGoogle()}
-                className="inline-flex w-full items-center justify-center gap-2.5 rounded-2xl border border-border bg-surface/50 px-4 py-2.5 text-sm text-foreground transition-colors hover:bg-hover disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={continueWithGoogle}
+                className="inline-flex w-full items-center justify-center gap-2.5 rounded-2xl border border-border bg-surface/50 px-4 py-2.5 text-sm text-foreground transition-colors hover:bg-hover"
               >
                 <GoogleIcon className="h-4 w-4 shrink-0" />
-                {googleLoading ? "Connecting…" : "Continue with Google"}
+                Continue with Google
               </button>
 
               <p className="mt-5 text-center text-sm text-muted-foreground">
