@@ -14,6 +14,7 @@ from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from app.models.audit_log import AuditLog
+    from app.models.connection import Connection
     from app.models.notification import Notification
     from app.models.report import Report
     from app.models.scan import Scan
@@ -52,6 +53,11 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     owner: Mapped[User] = relationship(back_populates="projects", lazy="select")
+    connections: Mapped[list[Connection]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
     scans: Mapped[list[Scan]] = relationship(
         back_populates="project",
         cascade="all, delete-orphan",

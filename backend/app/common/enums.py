@@ -24,6 +24,22 @@ class ProjectStatus(StrEnum):
     ARCHIVED = "archived"
 
 
+class ConnectionMethod(StrEnum):
+    REST_API = "rest_api"
+    OPENAPI = "openapi"
+    LOCALHOST = "localhost"
+    PLAYWRIGHT = "playwright"
+    SDK = "sdk"
+    WEBHOOK = "webhook"
+
+
+class ConnectionStatus(StrEnum):
+    UNVERIFIED = "unverified"
+    HEALTHY = "healthy"
+    UNHEALTHY = "unhealthy"
+    ERROR = "error"
+
+
 class ScanStatus(StrEnum):
     PENDING = "pending"
     QUEUED = "queued"
@@ -83,6 +99,10 @@ class AuditAction(StrEnum):
     PROJECT_CREATED = "project_created"
     PROJECT_UPDATED = "project_updated"
     PROJECT_DELETED = "project_deleted"
+    CONNECTION_CREATED = "connection_created"
+    CONNECTION_UPDATED = "connection_updated"
+    CONNECTION_DELETED = "connection_deleted"
+    CONNECTION_TESTED = "connection_tested"
     SCAN_STARTED = "scan_started"
     SCAN_COMPLETED = "scan_completed"
     SCAN_FAILED = "scan_failed"

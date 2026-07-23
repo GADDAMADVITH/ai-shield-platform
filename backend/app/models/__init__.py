@@ -6,6 +6,7 @@ Importing this package registers all models on ``Base.metadata``.
 from app.models.assessment import Assessment
 from app.models.assessment_catalog import AssessmentCatalog
 from app.models.audit_log import AuditLog
+from app.models.connection import Connection
 from app.models.notification import Notification
 from app.models.project import Project
 from app.models.report import Report
@@ -16,6 +17,7 @@ __all__ = [
     "Assessment",
     "AssessmentCatalog",
     "AuditLog",
+    "Connection",
     "Notification",
     "Project",
     "Report",
