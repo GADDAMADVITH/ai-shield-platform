@@ -20,6 +20,22 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+# Python / backend
+backend/.venv/
+backend/**/__pycache__/
+backend/**/*.py[cod]
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/*.egg-info/
+backend/.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.env
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
