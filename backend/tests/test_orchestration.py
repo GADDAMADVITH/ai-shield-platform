@@ -11,13 +11,14 @@ from typing import Any
 import httpx
 import pytest
 
-from app.assessment_engines.base import AssessmentEngine, EngineResult
+from app.assessment_engines.base import AssessmentEngine
 from app.assessment_engines.dummy import DummyAssessmentEngine
+from app.assessment_sdk.result import AssessmentResult
+from app.assessment_sdk.severity import Severity
 from app.common.enums import (
     AssessmentStatus,
     ConnectionMethod,
     ScanStatus,
-    Severity,
 )
 from app.core.config import Settings
 from app.orchestration.context import ScanContext
@@ -111,7 +112,7 @@ class ExplodingEngine(AssessmentEngine):
     def supported_connection_methods(self) -> frozenset[ConnectionMethod]:
         return frozenset(ConnectionMethod)
 
-    async def run(self, context: ScanContext) -> EngineResult:
+    async def run(self, context: ScanContext) -> AssessmentResult:
         raise RuntimeError("boom")
 
 
@@ -134,11 +135,15 @@ class SlowEngine(AssessmentEngine):
     def supported_connection_methods(self) -> frozenset[ConnectionMethod]:
         return frozenset(ConnectionMethod)
 
-    async def run(self, context: ScanContext) -> EngineResult:
+    async def run(self, context: ScanContext) -> AssessmentResult:
         import asyncio
 
         await asyncio.sleep(self._sleep_seconds)
-        return EngineResult(status=AssessmentStatus.PASSED, finding_summary="done")
+        return AssessmentResult.passed(
+            assessment_name=self.name,
+            assessment_version=self.version,
+            risk_score=100.0,
+        )
 
 
 def _context(
@@ -321,12 +326,12 @@ async def test_dummy_engine_returns_successful_fake_result() -> None:
         await context.http_client.aclose()
 
     assert result.status == AssessmentStatus.PASSED
-    assert result.score == 100.0
+    assert result.risk_score == 100.0
     assert result.confidence == 1.0
     assert result.severity == Severity.INFO
-    assert "Dummy assessment" in (result.finding_summary or "")
-    assert result.evidence.get("dummy") is True
-    assert result.metadata.get("timing_ms_fake") == 10
+    assert "Dummy Assessment Engine" in (result.finding_summary() or "")
+    assert result.evidence.extra.get("dummy") is True
+    assert result.metadata.extra.get("timing_ms_fake") == 10  # type: ignore[union-attr]
 
 
 # ---------------------------------------------------------------------------

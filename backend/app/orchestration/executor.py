@@ -11,7 +11,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from app.assessment_engines.base import AssessmentEngine, EngineResult
+from app.assessment_engines.base import AssessmentEngine, EngineResult, to_engine_result
+from app.assessment_sdk.result import AssessmentResult
 from app.common.enums import AssessmentStatus
 from app.orchestration.context import ScanContext
 
@@ -186,7 +187,16 @@ class AssessmentExecutor:
         async def _pipeline() -> EngineResult:
             try:
                 await engine.validate(context)
-                return await engine.run(context)
+                sdk_result = await engine.run(context)
+                if isinstance(sdk_result, EngineResult):
+                    # Backward-compatible path for legacy test doubles.
+                    return sdk_result
+                if isinstance(sdk_result, AssessmentResult):
+                    return to_engine_result(sdk_result)
+                raise TypeError(
+                    "AssessmentEngine.run must return AssessmentResult, "
+                    f"got {type(sdk_result)!r}"
+                )
             finally:
                 await engine.cleanup(context)
 

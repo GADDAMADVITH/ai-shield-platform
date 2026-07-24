@@ -3,6 +3,9 @@
 Every future security assessment inherits from :class:`AssessmentEngine` and
 receives a single :class:`~app.orchestration.context.ScanContext` — never a
 long parameter list.
+
+Engines MUST return :class:`~app.assessment_sdk.result.AssessmentResult`.
+:class:`EngineResult` remains the orchestration-layer adapter for persistence.
 """
 
 from __future__ import annotations
@@ -11,6 +14,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from app.assessment_sdk.metadata import AssessmentMetadata
+from app.assessment_sdk.result import AssessmentResult
 from app.common.enums import AssessmentStatus, ConnectionMethod, Severity
 
 if TYPE_CHECKING:
@@ -19,7 +24,11 @@ if TYPE_CHECKING:
 
 @dataclass(slots=True)
 class EngineResult:
-    """Standardized outcome produced by an assessment engine."""
+    """Orchestration-facing outcome derived from :class:`AssessmentResult`.
+
+    Kept for ScanOrchestrator / AssessmentExecutor compatibility. New engines
+    should produce ``AssessmentResult``; use :func:`to_engine_result` to adapt.
+    """
 
     status: AssessmentStatus
     score: float | None = None
@@ -40,6 +49,32 @@ class EngineResult:
             raise ValueError(
                 f"EngineResult.status must be a terminal assessment status, got {self.status!r}"
             )
+
+
+def to_engine_result(result: AssessmentResult) -> EngineResult:
+    """Adapt an SDK :class:`AssessmentResult` for the orchestration layer."""
+    meta = result.metadata
+    meta_dict = meta.to_dict() if isinstance(meta, AssessmentMetadata) else dict(meta)
+    return EngineResult(
+        status=result.status,
+        score=result.risk_score,
+        confidence=result.confidence,
+        severity=result.severity,
+        finding_summary=result.finding_summary(),
+        recommendation=result.primary_recommendation(),
+        evidence=result.evidence.to_dict(),
+        metadata={
+            **meta_dict,
+            "assessment_name": result.assessment_name,
+            "assessment_version": result.assessment_version,
+            "finding_count": result.finding_count,
+            "findings": [finding.to_dict() for finding in result.findings],
+            "recommendations": [rec.to_dict() for rec in result.recommendations],
+            "execution_time_ms": result.execution_time_ms,
+            "raw_output": result.raw_output,
+            "sdk": True,
+        },
+    )
 
 
 class AssessmentEngine(ABC):
@@ -78,8 +113,8 @@ class AssessmentEngine(ABC):
             )
 
     @abstractmethod
-    async def run(self, context: ScanContext) -> EngineResult:
-        """Execute the assessment using the provided scan context."""
+    async def run(self, context: ScanContext) -> AssessmentResult:
+        """Execute the assessment and return an SDK :class:`AssessmentResult`."""
 
     async def cleanup(self, context: ScanContext) -> None:  # noqa: B027
         """Release any resources acquired during :meth:`run`.
