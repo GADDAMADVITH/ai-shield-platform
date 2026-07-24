@@ -16,6 +16,13 @@ from app.assessment_engines.dummy import DummyAssessmentEngine
 from app.common.exceptions import AppError, ConflictError, NotFoundError
 
 UNIVERSAL_PACKAGE = "app.assessment_engines.universal"
+ARCHITECTURE_PACKAGE = "app.assessment_engines.architectures"
+
+# Packages scanned by create_default_registry when discover=True.
+DISCOVERY_PACKAGES: tuple[str, ...] = (
+    UNIVERSAL_PACKAGE,
+    ARCHITECTURE_PACKAGE,
+)
 
 
 class DuplicateEngineRegistrationError(ConflictError):
@@ -134,27 +141,56 @@ def instantiate_discovered_engines(
     return [cls() for cls in discover_engine_classes(package_name)]
 
 
+def discover_all_engine_classes(
+    package_names: Sequence[str] = DISCOVERY_PACKAGES,
+) -> list[type[AssessmentEngine]]:
+    """Discover concrete engines across multiple packages (universal + architecture)."""
+    discovered: dict[str, type[AssessmentEngine]] = {}
+    for package_name in package_names:
+        for cls in discover_engine_classes(package_name):
+            discovered[cls.__name__] = cls
+    return sorted(discovered.values(), key=lambda cls: cls.__name__)
+
+
+def instantiate_all_discovered_engines(
+    package_names: Sequence[str] = DISCOVERY_PACKAGES,
+) -> list[AssessmentEngine]:
+    """Instantiate engines discovered across *package_names*."""
+    return [cls() for cls in discover_all_engine_classes(package_names)]
+
+
 def create_default_registry(
     *,
     include_dummy: bool = True,
     include_universal: bool = True,
+    include_architecture: bool = True,
     discover: bool = True,
 ) -> AssessmentRegistry:
     """Build a registry with framework-default engines.
 
-    When *discover* is True (default), universal engines are loaded via
-    automatic package discovery. When False, falls back to the explicit
-    ``UNIVERSAL_ENGINES`` export list.
+    When *discover* is True (default), engines are loaded via automatic package
+    discovery from universal and architecture packages. When False, falls back
+    to the explicit ``UNIVERSAL_ENGINES`` / ``ARCHITECTURE_ENGINES`` export lists.
     """
     registry = AssessmentRegistry()
     if include_dummy:
         registry.register(DummyAssessmentEngine())
-    if include_universal:
-        if discover:
-            engines = instantiate_discovered_engines()
-        else:
-            from app.assessment_engines.universal import UNIVERSAL_ENGINES
+    if discover:
+        packages: list[str] = []
+        if include_universal:
+            packages.append(UNIVERSAL_PACKAGE)
+        if include_architecture:
+            packages.append(ARCHITECTURE_PACKAGE)
+        if packages:
+            registry.register_many(instantiate_all_discovered_engines(packages))
+        return registry
 
-            engines = [cls() for cls in UNIVERSAL_ENGINES]
-        registry.register_many(engines)
+    if include_universal:
+        from app.assessment_engines.universal import UNIVERSAL_ENGINES
+
+        registry.register_many(cls() for cls in UNIVERSAL_ENGINES)
+    if include_architecture:
+        from app.assessment_engines.architectures import ARCHITECTURE_ENGINES
+
+        registry.register_many(cls() for cls in ARCHITECTURE_ENGINES)
     return registry

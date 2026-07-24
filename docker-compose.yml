@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_shield
+    ports:
+      - "5432:5432"
+    volumes:
+      - ai_shield_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_shield"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env.example
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/ai_shield
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-local-compose-dev-secret-change-before-real-prod-use-32c}
+      CORS_ORIGINS: http://localhost:3000,http://localhost:5173,http://localhost:8080
+      LOG_LEVEL: INFO
+      LOG_FORMAT: json
+      SCAN_AUTO_EXECUTE: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 25s
+
+volumes:
+  ai_shield_pgdata:

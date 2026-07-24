@@ -22,6 +22,7 @@ from app.models.scan import Scan
 from app.models.scan_summary import ScanSummary
 from app.models.user import User
 from app.reports.builder import (
+    build_architecture_summary,
     build_executive_summary,
     posture_from_risk,
     security_posture_label,
@@ -337,6 +338,11 @@ async def build_risk_analytics(session: AsyncSession, *, owner: User) -> RiskAna
         low=sum(1 for f in all_findings if f.severity == Severity.LOW),
         info=sum(1 for f in all_findings if f.severity == Severity.INFO),
     )
+    category_dist: dict[str, int] = defaultdict(int)
+    for finding in all_findings:
+        category_dist[finding.category or finding.assessment_key or "unknown"] += 1
+    arch_summary = build_architecture_summary(all_findings)
+
     return RiskAnalytics(
         overall_risk_score=avg_risk,
         average_risk_score=avg_risk,
@@ -346,6 +352,9 @@ async def build_risk_analytics(session: AsyncSession, *, owner: User) -> RiskAna
         assessment_distribution=dict(assessment_dist),
         severity_distribution=sev,
         scan_status_distribution=dict(status_dist),
+        category_distribution=dict(category_dist),
+        universal_vs_architecture=dict(arch_summary["universal_vs_architecture"]),
+        architecture_risk_breakdown=dict(arch_summary["architecture_risk_breakdown"]),
     )
 
 
@@ -438,6 +447,9 @@ async def build_dashboard_statistics(
         severity_distribution=risk.severity_distribution,
         assessment_results=assessment_results[:20],
         latest_findings=latest_findings,
+        category_distribution=dict(risk.category_distribution),
+        universal_vs_architecture=dict(risk.universal_vs_architecture),
+        architecture_risk_breakdown=dict(risk.architecture_risk_breakdown),
     )
 
 

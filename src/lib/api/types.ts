@@ -171,6 +171,9 @@ export type DashboardStatistics = {
     assessment_distribution: Record<string, number>;
     severity_distribution: SeverityDistribution;
     scan_status_distribution: Record<string, number>;
+    category_distribution?: Record<string, number>;
+    universal_vs_architecture?: Record<string, number>;
+    architecture_risk_breakdown?: Record<string, unknown>;
   };
   severity_distribution: SeverityDistribution;
   assessment_results: Array<Record<string, unknown>>;
@@ -183,6 +186,9 @@ export type DashboardStatistics = {
     assessment_name?: string | null;
     description?: string;
   }>;
+  category_distribution?: Record<string, number>;
+  universal_vs_architecture?: Record<string, number>;
+  architecture_risk_breakdown?: Record<string, unknown>;
 };
 
 export type BackendReport = {

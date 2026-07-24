@@ -1,6 +1,7 @@
 """Report generation package."""
 
 from app.reports.builder import (
+    build_architecture_summary,
     build_executive_summary,
     build_json_report,
     build_risk_summary,
@@ -8,6 +9,7 @@ from app.reports.builder import (
 )
 
 __all__ = [
+    "build_architecture_summary",
     "build_executive_summary",
     "build_json_report",
     "build_risk_summary",

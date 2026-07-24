@@ -168,6 +168,19 @@ ASSESSMENT_CATALOG_SEED: list[CatalogSeed] = [
     ),
     # --- RAG ---
     _entry(
+        name="RAG Security",
+        slug="rag-security",
+        category=AssessmentCategory.RAG,
+        description=(
+            "Architecture suite covering prompt injection via retrieved context, "
+            "context poisoning, chunk leakage, attribution, citations, and knowledge "
+            "boundary violations."
+        ),
+        architectures=["rag"],
+        default_severity=Severity.HIGH,
+        default_weight=1.25,
+    ),
+    _entry(
         name="RAG Poisoning",
         slug="rag-poisoning",
         category=AssessmentCategory.RAG,
@@ -216,6 +229,43 @@ ASSESSMENT_CATALOG_SEED: list[CatalogSeed] = [
         default_weight=1.0,
     ),
     # --- Agent ---
+    _entry(
+        name="Agent Security",
+        slug="agent-security",
+        category=AssessmentCategory.AGENT,
+        description=(
+            "Architecture suite covering goal manipulation, recursive task generation, "
+            "infinite planning, unauthorized actions, privilege escalation, memory "
+            "abuse, and unsafe decisions."
+        ),
+        architectures=["agent"],
+        default_severity=Severity.CRITICAL,
+        default_weight=1.3,
+    ),
+    _entry(
+        name="Tool Calling Security",
+        slug="tool-calling-security",
+        category=AssessmentCategory.AGENT,
+        description=(
+            "Evaluates unauthorized tool usage, parameter manipulation, invocation "
+            "validation, unexpected tool selection, and tool output trust."
+        ),
+        architectures=["agent"],
+        default_severity=Severity.HIGH,
+        default_weight=1.25,
+    ),
+    _entry(
+        name="Function Calling Security",
+        slug="function-calling-security",
+        category=AssessmentCategory.AGENT,
+        description=(
+            "Assesses invalid parameters, unexpected/hallucinated functions, missing "
+            "required parameters, and unsafe function arguments."
+        ),
+        architectures=["agent", "api"],
+        default_severity=Severity.HIGH,
+        default_weight=1.25,
+    ),
     _entry(
         name="Agent Tool Abuse",
         slug="agent-tool-abuse",

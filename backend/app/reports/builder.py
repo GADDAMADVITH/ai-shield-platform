@@ -18,6 +18,161 @@ from app.services.findings import (
     severity_counts,
 )
 
+# Assessment keys / categories treated as architecture-specific.
+ARCHITECTURE_KEYS = frozenset(
+    {
+        "rag-security",
+        "agent-security",
+        "tool-calling-security",
+        "function-calling-security",
+        "api-security",
+        "embedding-security",
+        "rag-poisoning",
+        "vector-database-security",
+        "retrieval-leakage",
+        "agent-tool-abuse",
+        "function-calling-abuse",
+        "tool-injection",
+        "memory-leakage",
+    }
+)
+
+ARCHITECTURE_CATEGORIES = frozenset(
+    {"rag", "agent", "coding", "api", "vision", "audio"}
+)
+
+
+def is_architecture_finding(finding: FindingView) -> bool:
+    tags = {t.lower() for t in (finding.tags or [])}
+    if "architecture" in tags:
+        return True
+    if finding.assessment_key and finding.assessment_key in ARCHITECTURE_KEYS:
+        return True
+    category = (finding.category or "").lower()
+    if category in ARCHITECTURE_CATEGORIES:
+        return True
+    # Check-level categories from architecture engines (e.g. rag_context_poisoning)
+    if any(
+        category.startswith(prefix)
+        for prefix in ("rag_", "agent_", "tool_", "function_", "api_", "embedding", "vector_")
+    ):
+        return True
+    return False
+
+
+def architecture_of_finding(finding: FindingView) -> str:
+    tags = [t.lower() for t in (finding.tags or [])]
+    for candidate in (
+        "rag",
+        "agent",
+        "tool_calling",
+        "function_calling",
+        "api",
+        "embeddings",
+        "coding",
+    ):
+        if candidate in tags:
+            return candidate
+    key = finding.assessment_key or ""
+    mapping = {
+        "rag-security": "rag",
+        "rag-poisoning": "rag",
+        "vector-database-security": "rag",
+        "retrieval-leakage": "rag",
+        "embedding-security": "embeddings",
+        "agent-security": "agent",
+        "agent-tool-abuse": "agent",
+        "tool-calling-security": "tool_calling",
+        "tool-injection": "tool_calling",
+        "function-calling-security": "function_calling",
+        "function-calling-abuse": "function_calling",
+        "memory-leakage": "agent",
+        "api-security": "api",
+    }
+    if key in mapping:
+        return mapping[key]
+    category = (finding.category or "").lower()
+    for prefix, name in (
+        ("rag_", "rag"),
+        ("agent_", "agent"),
+        ("tool_", "tool_calling"),
+        ("function_", "function_calling"),
+        ("api_", "api"),
+        ("embedding", "embeddings"),
+        ("vector_", "embeddings"),
+    ):
+        if category.startswith(prefix) or category == name:
+            return name
+    return "unknown"
+
+
+def build_architecture_summary(findings: list[FindingView]) -> dict[str, Any]:
+    """Architecture-specific findings, risk, affected surfaces, and recommendations."""
+    arch_findings = [f for f in findings if is_architecture_finding(f)]
+    universal_findings = [f for f in findings if not is_architecture_finding(f)]
+    by_architecture: dict[str, list[FindingView]] = {}
+    for finding in arch_findings:
+        name = architecture_of_finding(finding)
+        by_architecture.setdefault(name, []).append(finding)
+
+    risk_breakdown: dict[str, Any] = {}
+    for name, items in sorted(by_architecture.items()):
+        risk = calculate_risk_score([f.severity for f in items])
+        risk_breakdown[name] = {
+            "finding_count": len(items),
+            "risk_score": risk,
+            "risk_level": risk_level_label(risk),
+            "highest_severity": derive_overall_severity(items).value,
+        }
+
+    recommendations: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for finding in arch_findings:
+        text = (finding.recommendation or "").strip()
+        if text and text not in seen:
+            seen.add(text)
+            recommendations.append(
+                {
+                    "title": finding.title,
+                    "description": text,
+                    "priority": finding.severity.value,
+                    "architecture": architecture_of_finding(finding),
+                    "assessment_key": finding.assessment_key,
+                    "finding_id": finding.id,
+                }
+            )
+
+    arch_risk = calculate_risk_score([f.severity for f in arch_findings])
+    return {
+        "architecture_risk_score": arch_risk,
+        "architecture_risk_level": risk_level_label(arch_risk),
+        "affected_architectures": sorted(by_architecture.keys()),
+        "architecture_risk_breakdown": risk_breakdown,
+        "architecture_findings": {
+            "total": len(arch_findings),
+            "items": [f.to_dict() for f in arch_findings],
+            "by_architecture": {
+                name: [f.to_dict() for f in items]
+                for name, items in sorted(by_architecture.items())
+            },
+        },
+        "universal_vs_architecture": {
+            "universal": len(universal_findings),
+            "architecture": len(arch_findings),
+        },
+        "recommendations": recommendations,
+        "evidence": [
+            {
+                "finding_id": f.id,
+                "assessment_key": f.assessment_key,
+                "architecture": architecture_of_finding(f),
+                "evidence": f.evidence,
+            }
+            for f in arch_findings
+            if f.evidence
+        ],
+    }
+
 
 def posture_from_risk(risk_score: float) -> float:
     """Map 0–100 risk (higher worse) to a security posture score (higher better)."""
@@ -277,6 +432,7 @@ def build_json_report(scan: Any, *, report: Any | None = None) -> dict[str, Any]
             if f.evidence
         ],
         "assessments": assessment_blocks,
+        "architecture": build_architecture_summary(findings),
         "scan_summary": {
             "overall_score": executive["overall_security_score"],
             "overall_risk_score": executive["overall_risk_score"],

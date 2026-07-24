@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import uuid
+
+# Avoid noisy startup DB probes when Postgres is not running for unit tests.
+os.environ.setdefault("STARTUP_VALIDATE_DATABASE", "false")
 
 import pytest
 from fastapi.testclient import TestClient

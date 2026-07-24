@@ -391,8 +391,12 @@ def test_create_default_registry_registers_universal_and_dummy() -> None:
         "output-validation",
     ):
         assert registry.has(key)
-    # Explicit list path
-    registry2 = create_default_registry(include_dummy=False, discover=False)
+    # Explicit list path (universal only)
+    registry2 = create_default_registry(
+        include_dummy=False,
+        include_architecture=False,
+        discover=False,
+    )
     assert len(registry2) == len(UNIVERSAL_ENGINES)
     # Orchestration re-export remains compatible
     orch = orch_create_default_registry()

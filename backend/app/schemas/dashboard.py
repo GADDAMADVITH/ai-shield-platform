@@ -66,6 +66,9 @@ class RiskAnalytics(BaseModel):
     assessment_distribution: dict[str, int] = Field(default_factory=dict)
     severity_distribution: SeverityDistribution
     scan_status_distribution: dict[str, int] = Field(default_factory=dict)
+    category_distribution: dict[str, int] = Field(default_factory=dict)
+    universal_vs_architecture: dict[str, int] = Field(default_factory=dict)
+    architecture_risk_breakdown: dict[str, Any] = Field(default_factory=dict)
 
 
 class DashboardStatistics(BaseModel):
@@ -74,6 +77,9 @@ class DashboardStatistics(BaseModel):
     severity_distribution: SeverityDistribution
     assessment_results: list[dict[str, Any]] = Field(default_factory=list)
     latest_findings: list[dict[str, Any]] = Field(default_factory=list)
+    category_distribution: dict[str, int] = Field(default_factory=dict)
+    universal_vs_architecture: dict[str, int] = Field(default_factory=dict)
+    architecture_risk_breakdown: dict[str, Any] = Field(default_factory=dict)
 
 
 class ScanHistoryItem(BaseModel):

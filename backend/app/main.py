@@ -1,19 +1,49 @@
 """AI Shield FastAPI application entrypoint."""
 
-from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
+from sqlalchemy import text
 
 from app.api.v1 import api_router
 from app.api.v1.health import router as health_router
-from app.core.config import get_settings
+from app.core.config import ConfigurationError, get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import get_logger, setup_logging
+from app.db.session import engine
 from app.middleware.cors import setup_cors
 
 logger = get_logger(__name__)
+
+
+async def _validate_startup() -> None:
+    """Fail fast on invalid configuration or unreachable database."""
+    settings = get_settings()
+    try:
+        settings.validate_for_runtime()
+    except (ConfigurationError, ValueError) as exc:
+        logger.error("Startup configuration validation failed: %s", exc)
+        raise
+
+    if not settings.startup_validate_database:
+        logger.info("Startup database validation skipped by configuration")
+        return
+
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        logger.info("Startup database validation succeeded")
+    except Exception as exc:
+        logger.error("Startup database validation failed: %s", exc)
+        # In non-production, log and continue so local docs/tests can boot.
+        if settings.is_production:
+            raise
+        logger.warning(
+            "Continuing startup despite database validation failure (env=%s)",
+            settings.app_env,
+        )
 
 
 @asynccontextmanager
@@ -25,9 +55,15 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         settings.app_name,
         settings.app_env,
         settings.debug,
+        extra={"event": "startup"},
     )
+    try:
+        await _validate_startup()
+    except Exception:
+        logger.exception("Application startup aborted")
+        raise
     yield
-    logger.info("Shutting down %s", settings.app_name)
+    logger.info("Shutting down %s", settings.app_name, extra={"event": "shutdown"})
 
 
 def _custom_openapi(app: FastAPI) -> dict:
