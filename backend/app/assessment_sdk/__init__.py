@@ -1,7 +1,7 @@
 """Assessment SDK — reusable building blocks for all assessment engines.
 
-Sprint 8 ships infrastructure only. Real security assessments land later and
-must consume these models/utilities instead of inventing parallel types.
+Sprint 8+ engines must consume these models/utilities instead of inventing
+parallel types. Sprint 9 universal assessments use this SDK exclusively.
 """
 
 from app.assessment_sdk.configuration import AssessmentConfiguration

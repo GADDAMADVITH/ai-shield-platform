@@ -1,7 +1,8 @@
 """Background scan execution — bridges API lifecycle to the orchestrator.
 
 Does not modify the orchestration package. Uses injected registry/executor only.
-Sprint 7.1 runs DummyAssessmentEngine exclusively via create_default_registry().
+``create_default_registry()`` registers the dummy engine plus Sprint 9 universal
+engines; scan creation currently still queues the dummy catalog entry.
 """
 
 from __future__ import annotations
