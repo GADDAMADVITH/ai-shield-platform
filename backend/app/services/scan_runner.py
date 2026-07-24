@@ -14,6 +14,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.assessment_sdk.scoring import calculate_risk_score
 from app.common.enums import (
     AssessmentStatus,
     AuditAction,
@@ -29,7 +30,11 @@ from app.models.scan_summary import ScanSummary
 from app.orchestration.executor import AssessmentExecutor, ExecutionResult
 from app.orchestration.orchestrator import ScanOrchestrator, WorkItem
 from app.orchestration.registry import create_default_registry
+from app.reports.builder import posture_from_risk
 from app.services.audit import write_audit_log
+from app.services.findings import extract_scan_findings
+from app.services.notifications import notify_scan_outcome
+from app.services.reports import generate_report_for_scan
 
 logger = get_logger("app.services.scan_runner")
 
@@ -114,6 +119,10 @@ class ProgressTrackingExecutor(AssessmentExecutor):
                 assessment.finding_summary = result.result.finding_summary
                 assessment.recommendation = result.result.recommendation
                 assessment.evidence = dict(result.result.evidence)
+                assessment.metadata_ = {
+                    **dict(getattr(assessment, "metadata_", None) or {}),
+                    **dict(result.result.metadata or {}),
+                }
         self._apply_assessment_fields(assessment, result)
         self._finished += 1
         if result.status in {AssessmentStatus.FAILED, AssessmentStatus.ERROR}:
@@ -307,6 +316,9 @@ async def execute_scan_job(scan_id: uuid.UUID) -> None:
                 scan.error_message = orchestration.error or "Orchestrator failure"
                 scan.completed_at = datetime.now(UTC)
                 await _upsert_summary(session, scan=scan, orchestration=orchestration)
+                await _finalize_report_and_notifications(
+                    session, scan=scan, succeeded=False
+                )
                 await write_audit_log(
                     session,
                     action=AuditAction.SCAN_FAILED,
@@ -325,6 +337,7 @@ async def execute_scan_job(scan_id: uuid.UUID) -> None:
             scan.error_message = None
             await session.flush()
             await _upsert_summary(session, scan=scan, orchestration=orchestration)
+            await _finalize_report_and_notifications(session, scan=scan, succeeded=True)
             await write_audit_log(
                 session,
                 action=AuditAction.SCAN_COMPLETED,
@@ -367,40 +380,66 @@ async def execute_scan_job(scan_id: uuid.UUID) -> None:
                     await fail_session.commit()
 
 
+async def _finalize_report_and_notifications(
+    session: Any,
+    *,
+    scan: Scan,
+    succeeded: bool,
+) -> None:
+    """Generate report artifact and user notifications after a terminal scan."""
+    findings = extract_scan_findings(scan)
+    risk = calculate_risk_score([f.severity for f in findings])
+    project_name = getattr(getattr(scan, "project", None), "name", None) or "Project"
+    try:
+        await generate_report_for_scan(
+            session,
+            scan=scan,
+            user_id=scan.initiated_by_id,
+        )
+    except Exception:  # noqa: BLE001 — report failure must not fail the scan job
+        logger.exception("report generation failed scan_id=%s", scan.id)
+    try:
+        await notify_scan_outcome(
+            session,
+            user_id=scan.initiated_by_id,
+            project_id=scan.project_id,
+            project_name=project_name,
+            scan_id=scan.id,
+            succeeded=succeeded,
+            findings=findings,
+            overall_risk_score=risk,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("notification emission failed scan_id=%s", scan.id)
+
+
 async def _upsert_summary(session: Any, *, scan: Scan, orchestration: Any) -> ScanSummary:
-    """Build ScanSummary from assessment outcomes after orchestration."""
+    """Build ScanSummary from assessment outcomes after orchestration.
+
+    Uses Assessment SDK risk scoring over extracted findings. ``overall_score``
+    stores the security posture (higher is better) for dashboard compatibility.
+    """
     assessments = list(scan.assessments or [])
     progress = orchestration.progress
     passed = progress.passed
     failed = progress.failed + progress.errored
 
+    finding_views = extract_scan_findings(scan)
     severity_counts = {
         Severity.CRITICAL: 0,
         Severity.HIGH: 0,
         Severity.MEDIUM: 0,
         Severity.LOW: 0,
     }
-    findings = 0
-    scores: list[float] = []
-    for assessment in assessments:
-        if assessment.score is not None:
-            scores.append(float(assessment.score))
-        if assessment.status == AssessmentStatus.PASSED:
-            continue
-        if assessment.status in {
-            AssessmentStatus.FAILED,
-            AssessmentStatus.ERROR,
-        }:
-            findings += 1
-            if assessment.severity in severity_counts:
-                severity_counts[assessment.severity] += 1
+    for finding in finding_views:
+        if finding.severity in severity_counts:
+            severity_counts[finding.severity] += 1
 
-    if scores:
-        overall = round(sum(scores) / len(scores), 2)
-    elif assessments:
+    risk = calculate_risk_score([f.severity for f in finding_views])
+    overall = posture_from_risk(risk)
+    # If no structured findings but assessments ran, fall back to pass ratio.
+    if not finding_views and assessments:
         overall = round((passed / max(len(assessments), 1)) * 100.0, 2)
-    else:
-        overall = 0.0
 
     duration = int(getattr(orchestration, "duration_ms", 0) or scan.execution_time_ms or 0)
     summary = scan.summary
@@ -416,7 +455,7 @@ async def _upsert_summary(session: Any, *, scan: Scan, orchestration: Any) -> Sc
     summary.low = severity_counts[Severity.LOW]
     summary.passed = passed
     summary.failed = failed
-    summary.total_findings = findings
+    summary.total_findings = len(finding_views)
     summary.execution_duration_ms = duration
     await session.flush()
     return summary

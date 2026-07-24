@@ -8,19 +8,21 @@ import {
   type ReactNode,
 } from "react";
 import {
-  clearAllNotifications,
-  deleteNotification,
   filterNotifications,
-  loadNotifications,
-  markAllNotificationsRead,
-  markNotificationRead,
-  NOTIFICATIONS_EVENT,
   pushNotification,
-  unreadCount,
   type AppNotification,
   type NotificationFilter,
+  type NotificationSeverity,
   type PushNotificationInput,
 } from "@/lib/notifications-store";
+import {
+  deleteNotification as apiDeleteNotification,
+  listNotifications,
+  markAllNotificationsRead as apiMarkAllRead,
+  markNotificationRead as apiMarkRead,
+} from "@/lib/api/notifications";
+import type { BackendNotification, SeverityApi } from "@/lib/api/types";
+import { getAccessToken } from "@/lib/api/client";
 
 type NotificationsContextValue = {
   notifications: AppNotification[];
@@ -38,55 +40,86 @@ type NotificationsContextValue = {
 
 const NotificationsContext = createContext<NotificationsContextValue | null>(null);
 
+function mapSeverity(severity: SeverityApi, level: BackendNotification["level"]): NotificationSeverity {
+  if (level === "critical" || severity === "critical") return "danger";
+  if (level === "warning" || severity === "high" || severity === "medium") return "warning";
+  if (severity === "info" || severity === "low") return "info";
+  return "info";
+}
+
+function mapBackendNotification(n: BackendNotification): AppNotification {
+  return {
+    id: n.id,
+    title: n.title,
+    description: n.description,
+    category: n.category,
+    severity: mapSeverity(n.severity, n.level),
+    createdAt: n.created_at,
+    read: n.is_read,
+  };
+}
+
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [filter, setFilter] = useState<NotificationFilter>("all");
   const [hydrated, setHydrated] = useState(false);
 
-  const sync = useCallback(() => {
-    setNotifications(loadNotifications());
+  const sync = useCallback(async () => {
+    if (!getAccessToken()) {
+      setNotifications([]);
+      setHydrated(true);
+      return;
+    }
+    try {
+      const page = await listNotifications({ page: 1, pageSize: 50 });
+      setNotifications(page.items.map(mapBackendNotification));
+    } catch {
+      // Keep existing list on transient failures.
+    } finally {
+      setHydrated(true);
+    }
   }, []);
 
   useEffect(() => {
-    sync();
-    setHydrated(true);
-    const onChange = () => sync();
-    window.addEventListener(NOTIFICATIONS_EVENT, onChange);
-    window.addEventListener("storage", onChange);
-    return () => {
-      window.removeEventListener(NOTIFICATIONS_EVENT, onChange);
-      window.removeEventListener("storage", onChange);
-    };
+    void sync();
+    const id = window.setInterval(() => {
+      void sync();
+    }, 60_000);
+    return () => window.clearInterval(id);
   }, [sync]);
 
   const notify = useCallback((input: PushNotificationInput) => {
+    // Optimistic local push for in-session UX (scan workflow); backend emits durable events.
     return pushNotification(input);
   }, []);
 
   const markRead = useCallback((id: string) => {
-    setNotifications(markNotificationRead(id));
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    void apiMarkRead(id, true).catch(() => undefined);
   }, []);
 
   const markAllRead = useCallback(() => {
-    setNotifications(markAllNotificationsRead());
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    void apiMarkAllRead().catch(() => undefined);
   }, []);
 
   const remove = useCallback((id: string) => {
-    setNotifications(deleteNotification(id));
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    void apiDeleteNotification(id).catch(() => undefined);
   }, []);
 
   const clearAll = useCallback(() => {
-    setNotifications(clearAllNotifications());
+    setNotifications([]);
   }, []);
 
   const refresh = useCallback(() => {
-    sync();
+    void sync();
   }, [sync]);
 
   const value = useMemo<NotificationsContextValue>(
     () => ({
       notifications: hydrated ? notifications : [],
-      unread: unreadCount(hydrated ? notifications : []),
+      unread: (hydrated ? notifications : []).filter((n) => !n.read).length,
       filter,
       setFilter,
       filtered: filterNotifications(hydrated ? notifications : [], filter),
