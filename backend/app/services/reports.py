@@ -186,6 +186,25 @@ async def get_owned_report(
     return report
 
 
+async def get_owned_scan_for_report(
+    session: AsyncSession,
+    *,
+    scan_id: uuid.UUID,
+    owner: User,
+) -> Scan:
+    """Load a scan owned by *owner* with report-ready relationships."""
+    result = await session.execute(
+        select(Scan)
+        .join(Project, Project.id == Scan.project_id)
+        .where(Scan.id == scan_id, Project.owner_id == owner.id)
+        .options(*_scan_load_options())
+    )
+    scan = result.scalar_one_or_none()
+    if scan is None:
+        raise NotFoundError("Scan not found")
+    return scan
+
+
 async def get_report_json(
     session: AsyncSession,
     *,
@@ -203,6 +222,43 @@ async def get_report_json(
         scan_id=report.scan_id,
     )
     return build_json_report(report.scan, report=report)
+
+
+async def get_report_pdf_for_scan(
+    session: AsyncSession,
+    *,
+    scan_id: uuid.UUID,
+    owner: User,
+) -> tuple[bytes, str]:
+    """Build PDF bytes for an owned scan using the shared report document.
+
+    Returns ``(pdf_bytes, filename)``.
+    """
+    from app.reports.pdf import render_report_pdf
+
+    scan = await get_owned_scan_for_report(session, scan_id=scan_id, owner=owner)
+    report = None
+    if scan.reports:
+        report = sorted(scan.reports, key=lambda r: r.created_at, reverse=True)[0]
+
+    document = build_json_report(scan, report=report)
+    pdf_bytes = render_report_pdf(document)
+
+    project_name = getattr(scan.project, "name", None) or "scan"
+    safe_name = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in project_name)
+    filename = f"ai-shield-report-{safe_name}-{scan.id}.pdf"
+
+    await write_audit_log(
+        session,
+        action=AuditAction.REPORT_DOWNLOADED,
+        resource=f"scan:{scan.id}",
+        description="PDF report downloaded",
+        user_id=owner.id,
+        project_id=scan.project_id,
+        scan_id=scan.id,
+        metadata={"format": "pdf", "bytes": len(pdf_bytes)},
+    )
+    return pdf_bytes, filename
 
 
 def report_extras(report: Report) -> dict[str, Any]:

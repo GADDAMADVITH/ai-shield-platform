@@ -224,6 +224,7 @@ def test_openapi_documents_sprint10_routes(client) -> None:
         "/api/v1/reports",
         "/api/v1/reports/{report_id}",
         "/api/v1/reports/{report_id}/json",
+        "/api/v1/reports/{scan_id}/pdf",
         "/api/v1/dashboard/overview",
         "/api/v1/dashboard/recent",
         "/api/v1/dashboard/statistics",

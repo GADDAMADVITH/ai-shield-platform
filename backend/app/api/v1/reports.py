@@ -6,6 +6,7 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import CurrentUser
@@ -86,3 +87,34 @@ async def get_report_json(
     )
     await session.commit()
     return document
+
+
+@router.get(
+    "/{scan_id}/pdf",
+    summary="Download PDF security report for a scan",
+    responses={
+        200: {
+            "content": {"application/pdf": {}},
+            "description": "PDF report attachment",
+        },
+        404: {"description": "Scan not found"},
+    },
+)
+async def get_report_pdf(
+    scan_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    pdf_bytes, filename = await report_service.get_report_pdf_for_scan(
+        session, scan_id=scan_id, owner=current_user
+    )
+    await session.commit()
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(pdf_bytes)),
+            "Cache-Control": "no-store",
+        },
+    )

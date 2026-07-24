@@ -21,6 +21,8 @@ export type ScoreBreakdownItem = {
 
 export type ScanResultReport = {
   id: string;
+  /** Backend scan UUID when the report is backed by the API. */
+  scanId?: string;
   projectName: string;
   env: string;
   applicationType: string;
@@ -197,6 +199,7 @@ export function buildScanResult(
   const now = new Date();
   return {
     id: session.id,
+    scanId: session.id,
     projectName: session.projectName,
     env: session.env,
     applicationType: session.applicationType,

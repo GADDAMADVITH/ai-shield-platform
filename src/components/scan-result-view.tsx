@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
@@ -10,6 +10,7 @@ import {
   ShieldAlert,
   CheckCircle2,
   Trash2,
+  Loader2,
 } from "lucide-react";
 import { Card, Chip, ScoreRing, SectionHeader, StatusDot } from "@/components/ui-primitives";
 import {
@@ -22,6 +23,8 @@ import { Progress } from "@/components/ui/progress";
 import { useScanWorkflow } from "@/components/scan-workflow-provider";
 import type { FindingSeverity, ScanResultReport } from "@/lib/scan-results";
 import { pushNotification } from "@/lib/notifications-store";
+import { messageForApiError } from "@/lib/api/errors";
+import { exportReportPdf } from "@/lib/report-export";
 import { cn } from "@/lib/utils";
 
 function severityTone(sev: FindingSeverity): "danger" | "warning" | "info" | "success" | "muted" {
@@ -77,7 +80,7 @@ export function buildReportTimeline(report: ScanResultReport) {
   ];
 }
 
-export function mockExportReport(report: ScanResultReport, kind: "PDF" | "JSON" | "Share") {
+export function mockExportReport(report: ScanResultReport, kind: "JSON" | "Share") {
   if (kind === "JSON") {
     try {
       const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
@@ -91,14 +94,13 @@ export function mockExportReport(report: ScanResultReport, kind: "PDF" | "JSON" 
       /* ignore */
     }
   }
-  toast.success(
-    kind === "Share" ? "Share link copied (mock)." : `${kind} export ready (mock).`,
-    { description: `${report.projectName} · ${report.id}` },
-  );
-  if (kind === "PDF" || kind === "JSON") {
+  toast.success(kind === "Share" ? "Share link copied (mock)." : "JSON export ready.", {
+    description: `${report.projectName} · ${report.id}`,
+  });
+  if (kind === "JSON") {
     pushNotification({
       title: "Report Generated",
-      description: `Security report exported successfully (${kind}) for ${report.projectName}.`,
+      description: `Security report exported successfully (JSON) for ${report.projectName}.`,
       category: "reports",
       severity: "info",
     });
@@ -132,6 +134,7 @@ export function ScanResultView({
   primaryActionLabel = "Run Another Scan",
 }: ScanResultViewProps) {
   const { openStartScan } = useScanWorkflow();
+  const [pdfExporting, setPdfExporting] = useState(false);
 
   const meta = useMemo(
     () => [
@@ -149,6 +152,29 @@ export function ScanResultView({
   const timeline = useMemo(() => buildReportTimeline(report), [report]);
   const summary = useMemo(() => executiveSummaryText(report), [report]);
 
+  async function handleExportPdf() {
+    if (pdfExporting) return;
+    setPdfExporting(true);
+    try {
+      await exportReportPdf(report);
+      toast.success("PDF downloaded", {
+        description: `${report.projectName} · security report`,
+      });
+      pushNotification({
+        title: "PDF Report Downloaded",
+        description: `Security report PDF exported for ${report.projectName}.`,
+        category: "reports",
+        severity: "info",
+      });
+    } catch (err) {
+      toast.error(messageForApiError(err), {
+        description: "PDF export failed. Please try again.",
+      });
+    } finally {
+      setPdfExporting(false);
+    }
+  }
+
   return (
     <>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
@@ -164,10 +190,16 @@ export function ScanResultView({
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => mockExportReport(report, "PDF")}
-            className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface/50 px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+            disabled={pdfExporting}
+            onClick={() => void handleExportPdf()}
+            className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface/50 px-3 py-2 text-sm text-muted-foreground hover:text-foreground disabled:opacity-60"
           >
-            <Download className="h-4 w-4" /> Export PDF
+            {pdfExporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            {pdfExporting ? "Exporting…" : "Export PDF"}
           </button>
           <button
             type="button"

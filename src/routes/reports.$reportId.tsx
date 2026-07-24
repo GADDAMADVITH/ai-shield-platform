@@ -3,10 +3,11 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { Card, Chip, SectionHeader } from "@/components/ui-primitives";
-import { getReport, getReportJson } from "@/lib/api/reports";
+import { downloadReportPdf, getReport, getReportJson } from "@/lib/api/reports";
+import { messageForApiError } from "@/lib/api/errors";
 import type { BackendReport } from "@/lib/api/types";
 import { requireAuth } from "@/lib/auth";
-import { FileJson } from "lucide-react";
+import { Download, FileJson, Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/reports/$reportId")({
   beforeLoad: () => {
@@ -43,6 +44,7 @@ function ReportDetailPage() {
   const [doc, setDoc] = useState<ReportDocument | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pdfExporting, setPdfExporting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +79,21 @@ function ReportDetailPage() {
       toast.success("JSON report downloaded");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Download failed");
+    }
+  }
+
+  async function downloadPdf() {
+    if (!meta?.scan_id || pdfExporting) return;
+    setPdfExporting(true);
+    try {
+      await downloadReportPdf(meta.scan_id);
+      toast.success("PDF downloaded");
+    } catch (err) {
+      toast.error(messageForApiError(err), {
+        description: "PDF export failed. Please try again.",
+      });
+    } finally {
+      setPdfExporting(false);
     }
   }
 
@@ -121,6 +138,15 @@ function ReportDetailPage() {
           <p className="mt-1 text-sm text-muted-foreground">{meta.summary}</p>
         </div>
         <div className="flex gap-2">
+          <button
+            type="button"
+            disabled={pdfExporting || !meta.scan_id}
+            onClick={() => void downloadPdf()}
+            className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm disabled:opacity-60"
+          >
+            {pdfExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {pdfExporting ? "Exporting…" : "Download PDF"}
+          </button>
           <button
             type="button"
             onClick={() => void downloadJson()}

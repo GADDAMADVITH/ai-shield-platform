@@ -7,6 +7,7 @@ from app.reports.builder import (
     build_risk_summary,
     posture_from_risk,
 )
+from app.reports.pdf import render_report_pdf
 
 __all__ = [
     "build_architecture_summary",
@@ -14,4 +15,5 @@ __all__ = [
     "build_json_report",
     "build_risk_summary",
     "posture_from_risk",
+    "render_report_pdf",
 ]

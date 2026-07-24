@@ -110,6 +110,11 @@ function enqueueRefresh(): Promise<boolean> {
   return refreshPromise;
 }
 
+/** Shared refresh helper for non-JSON downloads (PDF, etc.). */
+export function enqueueRefreshForDownload(): Promise<boolean> {
+  return enqueueRefresh();
+}
+
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {
     Accept: "application/json",
